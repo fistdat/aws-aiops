@@ -12,53 +12,28 @@ module "greengrass_core_policy" {
     Version = "2012-10-17"
     Statement = [
       {
-        Effect = "Allow"
-        Action = [
-          "iot:Connect"
-        ]
-        Resource = [
-          "arn:aws:iot:${local.region}:${data.aws_caller_identity.current.account_id}:client/SmartHUB-*"
-        ]
+        Effect   = "Allow"
+        Action   = ["iot:Connect"]
+        Resource = "arn:aws:iot:${local.region}:${data.aws_caller_identity.current.account_id}:client/*"
       },
       {
-        Effect = "Allow"
-        Action = [
-          "iot:Publish",
-          "iot:Receive"
-        ]
-        Resource = [
-          "arn:aws:iot:${local.region}:${data.aws_caller_identity.current.account_id}:topic/cameras/*/incidents",
-          "arn:aws:iot:${local.region}:${data.aws_caller_identity.current.account_id}:topic/cameras/*/registry",
-          "arn:aws:iot:${local.region}:${data.aws_caller_identity.current.account_id}:topic/cameras/*/metrics",
-          "arn:aws:iot:${local.region}:${data.aws_caller_identity.current.account_id}:topic/$aws/things/SmartHUB-*/shadow/*"
-        ]
+        Effect   = "Allow"
+        Action   = ["iot:Publish", "iot:Receive"]
+        Resource = "arn:aws:iot:${local.region}:${data.aws_caller_identity.current.account_id}:topic/*"
       },
       {
-        Effect = "Allow"
-        Action = [
-          "iot:Subscribe"
-        ]
-        Resource = [
-          "arn:aws:iot:${local.region}:${data.aws_caller_identity.current.account_id}:topicfilter/cameras/*/incidents",
-          "arn:aws:iot:${local.region}:${data.aws_caller_identity.current.account_id}:topicfilter/$aws/things/SmartHUB-*/shadow/*"
-        ]
+        Effect   = "Allow"
+        Action   = ["iot:Subscribe"]
+        Resource = "arn:aws:iot:${local.region}:${data.aws_caller_identity.current.account_id}:topicfilter/*"
       },
       {
-        Effect = "Allow"
-        Action = [
-          "iot:UpdateThingShadow",
-          "iot:GetThingShadow",
-          "iot:DeleteThingShadow"
-        ]
-        Resource = [
-          "arn:aws:iot:${local.region}:${data.aws_caller_identity.current.account_id}:thing/SmartHUB-*"
-        ]
+        Effect   = "Allow"
+        Action   = ["iot:UpdateThingShadow", "iot:GetThingShadow", "iot:DeleteThingShadow"]
+        Resource = "arn:aws:iot:${local.region}:${data.aws_caller_identity.current.account_id}:thing/*"
       },
       {
-        Effect = "Allow"
-        Action = [
-          "greengrass:*"
-        ]
+        Effect   = "Allow"
+        Action   = ["greengrass:*"]
         Resource = "*"
       }
     ]

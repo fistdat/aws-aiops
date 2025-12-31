@@ -65,3 +65,5 @@ temp/
 # Backup files
 *.bak
 *.backup
+*.tfplan
+tfplan
