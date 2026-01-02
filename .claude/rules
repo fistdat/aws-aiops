@@ -1,0 +1,761 @@
+# Claude Rules for AWS AIOps Project
+# Version: 1.0.0
+# Last Updated: 2025-12-31
+# Purpose: Enforce Infrastructure as Code (IaC) best practices
+
+## 🎯 CORE PRINCIPLE: 100% INFRASTRUCTURE AS CODE
+
+**ABSOLUTE REQUIREMENT**: All infrastructure, configuration, and deployment changes MUST be managed through Terraform. No exceptions unless explicitly approved by user.
+
+---
+
+## 1. TERRAFORM MANDATORY RULES
+
+### 1.1 Infrastructure Changes
+- ✅ **ALWAYS** use Terraform for:
+  - AWS resource creation/modification (IoT, Lambda, DynamoDB, etc.)
+  - Package installations (apt-get, yum, pip must be in Terraform provisioners)
+  - File deployments (scripts, configs, code)
+  - Permission changes (chmod, chown in provisioners)
+  - Directory creation (mkdir in provisioners)
+  - Service configurations
+
+- ❌ **NEVER** use directly:
+  - `aws` CLI commands for resource creation (only for read/query operations)
+  - `sudo apt-get install` without Terraform null_resource provisioner
+  - Manual file copies without Terraform local_file or provisioner
+  - Manual permission changes outside Terraform
+  - Direct database modifications (schema changes via Terraform)
+
+### 1.2 Terraform Workflow
+**REQUIRED workflow for ANY infrastructure change**:
+```bash
+1. Edit Terraform source files (*.tf)
+2. terraform validate
+3. terraform plan -out=tfplan
+4. Show plan to user for approval
+5. terraform apply tfplan
+6. Verify deployment
+7. Document changes
+```
+
+### 1.3 Terraform Best Practices
+- **Triggers**: Use MD5 hashing for file change detection
+  ```hcl
+  triggers = {
+    file_md5 = filemd5("path/to/file")
+  }
+  ```
+- **Idempotency**: All resources must be safely re-runnable
+- **Dependencies**: Explicit `depends_on` when order matters
+- **State Management**: Use S3 backend (already configured)
+- **Modules**: Reuse code via `_module/` directory
+- **Versioning**: Pin provider versions in `required_providers`
+
+---
+
+## 2. PROJECT STRUCTURE COMPLIANCE
+
+### 2.1 Directory Structure
+**MUST follow** existing hierarchy:
+```
+aws-aiops/
+├── dev/                          # Development environment
+│   ├── 0.iam_assume_role_terraform/
+│   ├── 1.networking/
+│   ├── 2.iot_core/
+│   ├── 3.data_layer/
+│   ├── 4.iot_rules/
+│   ├── 5.api_gateway/
+│   ├── 6.greengrass_core/
+│   └── 7.{next-module}/         # Follow numbering convention
+├── _module/                      # Reusable Terraform modules
+│   └── aws/
+│       ├── data/
+│       ├── iot/
+│       └── networking/
+├── ops/                          # Operational infrastructure
+│   └── 0.init_s3_backend/
+├── scripts/                      # Automation scripts (NOT for infra changes)
+└── claudedocs/                   # Documentation
+```
+
+### 2.2 New Module Creation
+When creating new infrastructure:
+1. **Determine location**: dev/X.module-name/ where X is next number
+2. **Create standard files**:
+   ```
+   {module}/
+   ├── main.tf           # Resource definitions
+   ├── variables.tf      # Input variables
+   ├── outputs.tf        # Output values
+   ├── locals.tf         # Local variables
+   ├── provider.tf       # Provider configuration
+   └── README.md         # Module documentation
+   ```
+3. **Backend config**: Reference S3 backend in comments
+4. **Remote state**: Reference other modules via data.terraform_remote_state
+
+---
+
+## 3. FILE CHANGE DETECTION
+
+### 3.1 Mandatory Triggers
+**ANY file** that affects deployment MUST have MD5 trigger:
+
+```hcl
+resource "null_resource" "deploy_component" {
+  triggers = {
+    # Source code files
+    main_code_md5    = filemd5("path/to/main.py")
+    config_md5       = filemd5("path/to/config.json")
+
+    # Scripts
+    setup_script_md5 = filemd5("path/to/setup.sh")
+
+    # Dependencies
+    requirements_md5 = filemd5("path/to/requirements.txt")
+
+    # Schema/Config
+    schema_md5       = filemd5("path/to/schema.sql")
+  }
+
+  # ... provisioners ...
+}
+```
+
+### 3.2 Files Requiring Triggers
+- ✅ Python/Node.js source code
+- ✅ Shell scripts (*.sh)
+- ✅ SQL schemas (*.sql)
+- ✅ Configuration files (*.json, *.yaml, *.conf)
+- ✅ Templates (*.tpl)
+- ✅ Requirements files (requirements.txt, package.json)
+
+---
+
+## 4. DEPLOYMENT ARTIFACTS
+
+### 4.1 Artifact Organization
+```
+{module}/
+├── {component-name}/
+│   ├── src/              # Source code
+│   ├── scripts/          # Setup/deployment scripts
+│   ├── config/           # Configuration files
+│   ├── templates/        # Template files
+│   └── tests/            # Test scripts
+└── {component}.tf        # Terraform config for deployment
+```
+
+### 4.2 Deployment Scripts
+**Template for deployment scripts**:
+```bash
+#!/bin/bash
+set -e  # Exit on error
+
+# Logging functions
+log_info() { echo -e "\033[0;32m[INFO]\033[0m $1"; }
+log_error() { echo -e "\033[0;31m[ERROR]\033[0m $1"; }
+
+# Pre-checks
+# Deployment steps
+# Verification
+# Report status
+```
+
+**Requirements**:
+- Exit code 0 on success, non-zero on failure
+- Proper error handling
+- Idempotent (can run multiple times)
+- Logging with timestamps
+
+---
+
+## 5. TESTING REQUIREMENTS
+
+### 5.1 Terraform Testing
+**Before ANY terraform apply**:
+```bash
+# 1. Format check
+terraform fmt -check
+
+# 2. Validation
+terraform validate
+
+# 3. Plan review
+terraform plan -out=tfplan
+
+# 4. Show plan to user
+terraform show tfplan
+
+# 5. Wait for user approval
+
+# 6. Apply
+terraform apply tfplan
+```
+
+### 5.2 Component Testing
+**After deployment**, provide test commands:
+```bash
+# Verification script
+./scripts/verify-{component}.sh
+
+# Test suite
+python3 ./tests/test_{component}.py
+
+# Health check
+curl https://endpoint/health
+```
+
+---
+
+## 6. AWS REGION & ENVIRONMENT
+
+### 6.1 Current Configuration
+- **AWS Region**: `ap-southeast-1` (Singapore)
+- **Environment**: `dev`
+- **AWS Account**: `061100493617`
+- **Terraform Backend**: S3 bucket `aismc-platform-terraformstatefile-20251101-061100493617`
+
+### 6.2 Resource Naming Convention
+```
+{product}-{environment}-{resource-type}-{purpose}
+
+Examples:
+- aismc-dev-iot-core-policy
+- aismc-dev-lambda-get-cameras
+- aismc-dev-dynamodb-incidents
+```
+
+### 6.3 Tagging Standard
+**Required tags** for all resources:
+```hcl
+tags = {
+  Environment = "dev"
+  Product     = "aismc"
+  ManagedBy   = "Terraform"
+  Project     = "AIOps-IoC"
+  SiteId      = "site-001"  # If applicable
+}
+```
+
+---
+
+## 7. SECURITY & PERMISSIONS
+
+### 7.1 IAM Best Practices
+- **Least Privilege**: Only grant necessary permissions
+- **Service Roles**: Use dedicated roles per service
+- **No Hardcoded Credentials**: Use IAM roles, SSM parameters
+- **Policy Validation**: Test policies before deployment
+
+### 7.2 File Permissions
+**Greengrass file ownership**:
+```bash
+# Always set correct ownership
+chown ggc_user:ggc_group /path/to/file
+
+# Executable scripts
+chmod 755 script.sh
+
+# Config files
+chmod 644 config.json
+
+# Sensitive files (certs, keys)
+chmod 600 private.key
+```
+
+### 7.3 Secrets Management
+- ❌ **NEVER** hardcode secrets in Terraform
+- ✅ **ALWAYS** use AWS SSM Parameter Store or Secrets Manager
+- ✅ Mark sensitive outputs: `sensitive = true`
+
+Example:
+```hcl
+resource "aws_ssm_parameter" "api_key" {
+  name  = "/aismc/dev/api-key"
+  type  = "SecureString"
+  value = var.api_key
+}
+
+output "api_key" {
+  value     = aws_ssm_parameter.api_key.arn
+  sensitive = true
+}
+```
+
+---
+
+## 8. VERSION CONTROL & GIT
+
+### 8.1 Commit Standards
+```
+<type>(<scope>): <subject>
+
+Types:
+- feat: New feature
+- fix: Bug fix
+- infra: Infrastructure change
+- docs: Documentation
+- test: Testing
+- refactor: Code refactoring
+
+Examples:
+feat(greengrass): Add SQLite database layer
+infra(iot-core): Update Thing policy for Greengrass
+fix(dao): Fix Python import compatibility
+```
+
+### 8.2 Files to Commit
+✅ **Always commit**:
+- Terraform source files (*.tf)
+- Scripts (*.sh, *.py)
+- Configuration templates (*.tpl)
+- Documentation (*.md)
+- Requirements files
+
+❌ **Never commit**:
+- Terraform state files (*.tfstate)
+- Credentials/certificates (*.pem, *.key)
+- Local environment files (.env)
+- Terraform lock files (.terraform.lock.hcl) - optional
+- Binary files
+
+### 8.3 .gitignore
+Already configured. **Do not modify** unless necessary.
+
+---
+
+## 9. EDGE COMPUTING (GREENGRASS)
+
+### 9.1 Greengrass Component Structure
+```
+{component-name}/
+├── recipe.yaml                 # Component recipe
+├── artifacts/
+│   ├── {component}.py         # Main component code
+│   ├── requirements.txt       # Python dependencies
+│   └── config.json            # Component config
+└── tests/
+    └── test_{component}.py    # Unit tests
+```
+
+### 9.2 Component Deployment via Terraform
+**Template**:
+```hcl
+# Upload artifacts to S3
+resource "aws_s3_object" "component_artifact" {
+  bucket = "aismc-greengrass-components"
+  key    = "{component}/{version}/{file}"
+  source = "path/to/local/file"
+  etag   = filemd5("path/to/local/file")
+}
+
+# Create component version
+resource "null_resource" "create_component" {
+  triggers = {
+    recipe_md5 = filemd5("recipe.yaml")
+    code_md5   = filemd5("main.py")
+  }
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      aws greengrassv2 create-component-version \
+        --inline-recipe fileb://recipe.yaml \
+        --region ap-southeast-1
+    EOT
+  }
+}
+
+# Deploy to core device
+resource "null_resource" "deploy_component" {
+  # ... deployment configuration ...
+}
+```
+
+---
+
+## 10. DOCUMENTATION REQUIREMENTS
+
+### 10.1 Mandatory Documentation
+**After EVERY infrastructure change**, update:
+
+1. **Module README.md**:
+   ```markdown
+   # {Module Name}
+
+   ## Purpose
+   ## Resources Created
+   ## Variables
+   ## Outputs
+   ## Usage
+   ## Testing
+   ```
+
+2. **Deployment Summary**:
+   - Auto-generated via Terraform `local_file` resource
+   - Template: `templates/{component}-summary.tpl`
+   - Output: `{MODULE}-DEPLOYMENT.md`
+
+3. **CHANGELOG.md** (project root):
+   ```markdown
+   ## [Version] - YYYY-MM-DD
+   ### Added
+   ### Changed
+   ### Fixed
+   ```
+
+### 10.2 Code Comments
+```hcl
+# ============================================================================
+# Section Name
+# ============================================================================
+# Description of what this section does
+# Why it's needed
+# Any important notes
+
+resource "..." {
+  # Inline comment explaining non-obvious configuration
+}
+```
+
+---
+
+## 11. ERROR HANDLING & ROLLBACK
+
+### 11.1 Terraform Failures
+If `terraform apply` fails:
+1. **DO NOT** manually fix via AWS Console or CLI
+2. **Analyze** error in Terraform output
+3. **Fix** source Terraform code
+4. **Re-validate** and re-apply
+5. **If blocked**: Use `terraform taint` to force recreation
+6. **Last resort**: `terraform destroy` specific resource and recreate
+
+### 11.2 Rollback Procedure
+```bash
+# 1. Identify last known good state
+terraform show
+
+# 2. Revert Terraform code changes via Git
+git log
+git revert <commit-hash>
+
+# 3. Re-apply
+terraform plan
+terraform apply
+
+# 4. Verify rollback
+./scripts/verify-deployment.sh
+```
+
+---
+
+## 12. PERFORMANCE & OPTIMIZATION
+
+### 12.1 Terraform Performance
+- Use `-parallelism=10` for faster applies
+- Cache provider plugins
+- Use `terraform plan -target` for specific resources (sparingly)
+- Separate large modules into smaller ones
+
+### 12.2 Resource Optimization
+- Use `lifecycle` blocks to prevent unnecessary recreation
+- Enable `prevent_destroy` for critical resources
+- Use `ignore_changes` for externally managed attributes
+
+Example:
+```hcl
+resource "aws_s3_bucket" "state" {
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+```
+
+---
+
+## 13. TROUBLESHOOTING GUIDE
+
+### 13.1 Common Issues & IaC Solutions
+
+| Issue | ❌ Wrong Approach | ✅ IaC Approach |
+|-------|------------------|-----------------|
+| Need to install package | `sudo apt-get install sqlite3` | Add to Terraform null_resource provisioner |
+| File permission error | `sudo chmod 755 file` | Update Terraform provisioner script |
+| Config needs update | Edit file directly | Update Terraform template, re-apply |
+| Resource out of sync | Fix in AWS Console | Import to Terraform state, manage via code |
+| Script has bug | Edit deployed script | Fix source script, taint resource, re-apply |
+
+### 13.2 State Issues
+```bash
+# Import existing resource
+terraform import aws_iot_thing.core GreengrassCore-site001-hanoi
+
+# Remove resource from state (but keep in AWS)
+terraform state rm aws_iot_thing.core
+
+# List all resources in state
+terraform state list
+
+# Show resource details
+terraform state show aws_iot_thing.core
+```
+
+---
+
+## 14. SPECIAL CASES & EXCEPTIONS
+
+### 14.1 When Manual Operations Are Allowed
+**ONLY these scenarios** allow non-Terraform operations:
+
+1. **Emergency Fixes** (production outage):
+   - Manual fix allowed with user approval
+   - MUST document in ticket
+   - MUST reconcile with Terraform within 24 hours
+
+2. **Read-Only Operations**:
+   - AWS CLI queries (describe, list, get)
+   - Log viewing
+   - Metrics/monitoring checks
+
+3. **Testing/Validation**:
+   - Running test scripts
+   - Database queries (SELECT only)
+   - Curl/wget for API testing
+
+4. **Explicitly Requested by User**:
+   - User says "manually install X for testing"
+   - Still RECOMMEND Terraform approach
+
+### 14.2 Exception Documentation
+If exception granted:
+```markdown
+## Manual Change Log
+
+**Date**: 2025-12-31
+**Changed By**: Claude
+**Approved By**: {User}
+**Reason**: {Emergency/Testing/etc}
+**Changes Made**:
+- Changed X to Y
+- Installed package Z
+
+**Reconciliation Plan**:
+- [ ] Create Terraform resource for X
+- [ ] Test in dev environment
+- [ ] Apply via Terraform
+- [ ] Verify parity
+- [ ] Document in CHANGELOG
+```
+
+---
+
+## 15. INTERACTION GUIDELINES
+
+### 15.1 When User Requests Infrastructure Change
+
+**Always follow this sequence**:
+
+1. **Acknowledge**: "I'll implement this using Terraform to ensure IaC compliance"
+
+2. **Design**: Explain Terraform approach:
+   ```
+   I'll create/update these Terraform resources:
+   - Resource 1: {purpose}
+   - Resource 2: {purpose}
+   Files to modify:
+   - {module}/main.tf
+   - {module}/{component}/script.sh
+   ```
+
+3. **Implement**: Create/update Terraform code
+
+4. **Validate**: Run `terraform validate`
+
+5. **Plan**: Run `terraform plan` and show output
+
+6. **Request Approval**: "Ready to apply. Proceed?"
+
+7. **Apply**: Run `terraform apply` after approval
+
+8. **Verify**: Run verification tests
+
+9. **Document**: Update README, create deployment summary
+
+### 15.2 Response Templates
+
+**When user suggests manual command**:
+```
+I understand you want to {action}. However, to maintain IaC compliance,
+I'll implement this via Terraform instead:
+
+[Terraform approach explanation]
+
+This ensures:
+✅ Changes are version controlled
+✅ Reproducible deployments
+✅ No configuration drift
+✅ Rollback capability
+
+Shall I proceed with the Terraform implementation?
+```
+
+**When proposing solution**:
+```
+To implement {feature}, I'll use Infrastructure as Code approach:
+
+1. Terraform Resources:
+   - {resource 1}
+   - {resource 2}
+
+2. Files to modify:
+   - {file 1}
+   - {file 2}
+
+3. Deployment triggers:
+   - File change detection via MD5
+   - Auto-deployment on terraform apply
+
+This maintains 100% IaC compliance. Proceed?
+```
+
+---
+
+## 16. MONITORING & OBSERVABILITY
+
+### 16.1 CloudWatch Integration
+All deployments MUST include:
+- CloudWatch Log Groups
+- Retention policies (30 days minimum)
+- Metric filters for errors
+- Alarms for critical failures
+
+### 16.2 Deployment Verification
+**Standard verification checklist**:
+```bash
+# 1. Terraform state matches reality
+terraform plan  # Should show "No changes"
+
+# 2. AWS resources exist
+aws {service} describe-{resource} --region ap-southeast-1
+
+# 3. Application health
+curl https://endpoint/health
+
+# 4. Logs show no errors
+aws logs tail /aws/lambda/{function} --follow
+
+# 5. Metrics are normal
+# Check CloudWatch dashboard
+```
+
+---
+
+## 17. COMPLIANCE CHECKLIST
+
+**Before considering ANY task complete**, verify:
+
+- [ ] All changes implemented via Terraform (not manual commands)
+- [ ] Terraform validate passes
+- [ ] Terraform plan reviewed and approved by user
+- [ ] Terraform apply completed successfully
+- [ ] Proper triggers configured for file change detection
+- [ ] Resources have correct tags
+- [ ] Proper file permissions set (ggc_user ownership where needed)
+- [ ] No hardcoded secrets
+- [ ] Documentation updated (README, deployment summary)
+- [ ] Verification tests run and passed
+- [ ] State file in S3 backend (not local)
+- [ ] No manual edits to deployed files
+- [ ] Git commit message follows standards
+
+---
+
+## 18. QUICK REFERENCE
+
+### Essential Commands
+```bash
+# Terraform workflow
+terraform init
+terraform validate
+terraform fmt
+terraform plan -out=tfplan
+terraform apply tfplan
+
+# Taint resource for recreation
+terraform taint null_resource.deploy_component
+
+# Import existing resource
+terraform import {resource_type}.{name} {resource_id}
+
+# Verify deployment
+sudo python3 ./scripts/test-{component}.py
+```
+
+### Directory Quick Nav
+```
+dev/6.greengrass_core/        # Current Greengrass work
+dev/6.greengrass_core/edge-components/  # Edge layer code
+_module/aws/iot/              # IoT Terraform modules
+claudedocs/                   # All documentation
+```
+
+---
+
+## 19. CONTACT & ESCALATION
+
+### When Stuck
+1. **Analyze error**: Read Terraform/AWS error messages carefully
+2. **Check state**: `terraform state list` and `terraform show`
+3. **Review docs**: Check AWS provider documentation
+4. **Ask user**: If genuinely blocked, explain situation and ask for guidance
+
+### Reporting Issues
+```markdown
+**Issue**: {Brief description}
+**Attempted Solutions**:
+1. {What I tried}
+2. {Result}
+
+**Current State**:
+- Terraform state: {clean/dirty}
+- AWS resources: {status}
+- Error message: {error}
+
+**Recommendation**: {Suggested approach}
+**Need User Approval**: {Yes/No}
+```
+
+---
+
+## 20. VERSION HISTORY
+
+| Version | Date | Changes |
+|---------|------|---------|
+| 1.0.0 | 2025-12-31 | Initial rules creation |
+
+---
+
+## 📌 REMEMBER
+
+**The Golden Rule of AWS AIOps Project**:
+
+> If it changes infrastructure, configuration, or deployment,
+> it MUST go through Terraform. No exceptions without explicit user approval.
+
+**Benefits of 100% IaC Compliance**:
+- ✅ Reproducible deployments
+- ✅ Version controlled infrastructure
+- ✅ No configuration drift
+- ✅ Easy rollback
+- ✅ Team collaboration
+- ✅ Audit trail
+- ✅ Disaster recovery ready
+
+**When in doubt**: Choose Terraform over manual commands. Always.
+
+---
+
+**End of Rules**

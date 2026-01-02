@@ -19,6 +19,37 @@ output "camera_incidents_table_arn" {
   value       = module.camera_incidents_table.table_arn
 }
 
+# v2.0 Architecture Tables
+output "device_inventory_table_name" {
+  description = "Device Inventory DynamoDB table name"
+  value       = module.device_inventory_table.table_name
+}
+
+output "device_inventory_table_arn" {
+  description = "Device Inventory DynamoDB table ARN"
+  value       = module.device_inventory_table.table_arn
+}
+
+output "incident_analytics_table_name" {
+  description = "Incident Analytics DynamoDB table name"
+  value       = module.incident_analytics_table.table_name
+}
+
+output "incident_analytics_table_arn" {
+  description = "Incident Analytics DynamoDB table ARN"
+  value       = module.incident_analytics_table.table_arn
+}
+
+output "chat_history_table_name" {
+  description = "Chat History DynamoDB table name"
+  value       = module.chat_history_table.table_name
+}
+
+output "chat_history_table_arn" {
+  description = "Chat History DynamoDB table ARN"
+  value       = module.chat_history_table.table_arn
+}
+
 # Timestream
 output "timestream_database_name" {
   description = "Timestream database name"

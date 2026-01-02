@@ -1,0 +1,71 @@
+---
+RecipeFormatVersion: '2020-01-25'
+ComponentName: com.aismc.IncidentMessageForwarder
+ComponentVersion: '1.0.0'
+ComponentDescription: |
+  Forwards incidents from local SQLite queue to AWS IoT Core via MQTT.
+  Provides offline resilience with retry logic and Device Shadow updates.
+ComponentPublisher: AISMC
+ComponentType: aws.greengrass.generic
+
+ComponentConfiguration:
+  DefaultConfiguration:
+    enabled: "false"  # DISABLED by default (v2.0 architecture - kept as backup)
+    site_id: "site-001"
+    poll_interval: 10
+    batch_size: 10
+    max_retries: 5
+    log_level: "INFO"
+
+ComponentDependencies:
+  aws.greengrass.Nucleus:
+    VersionRequirement: ">=2.0.0"
+    DependencyType: HARD
+
+Manifests:
+  - Platform:
+      os: linux
+    Lifecycle:
+      Install:
+        RequiresPrivilege: true
+        Script: |
+          echo "Installing IncidentMessageForwarder dependencies..."
+          pip3 install awsiotsdk==1.11.9
+          echo "✅ Dependencies installed"
+
+      Run:
+        RequiresPrivilege: false
+        Script: |
+          #!/bin/bash
+          set -e
+
+          echo "IncidentMessageForwarder - v2.0 Architecture (Backup Component)"
+          echo "Enabled: {configuration:/enabled}"
+
+          if [ "{configuration:/enabled}" = "true" ]; then
+            echo "Component ENABLED - Starting real-time forwarding..."
+            python3 -u {artifacts:path}/forwarder_service.py \
+              --site-id {configuration:/site_id} \
+              --poll-interval {configuration:/poll_interval} \
+              --batch-size {configuration:/batch_size}
+          else
+            echo "Component DISABLED - Running in idle mode (v2.0: batch analytics preferred)"
+            echo "To enable: Update deployment config with enabled=true"
+            # Keep component running but idle
+            while true; do
+              sleep 3600
+            done
+          fi
+
+        SetEnv:
+          AWS_IOT_THING_NAME: "GreengrassCore-{configuration:/site_id}-hanoi"
+
+      Shutdown:
+        Script: |
+          echo "Stopping IncidentMessageForwarder..."
+          pkill -f "forwarder_service.py"
+        Timeout: 15
+
+Lifecycle:
+  Setenv:
+    AWS_REGION: "ap-southeast-1"

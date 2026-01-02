@@ -1,0 +1,72 @@
+---
+RecipeFormatVersion: '2020-01-25'
+ComponentName: com.aismc.IncidentAnalyticsSync
+ComponentVersion: '1.0.0'
+ComponentDescription: |
+  Hourly aggregation and sync of incident analytics to AWS IoT Core.
+  Part of v2.0 architecture - batch analytics instead of real-time forwarding.
+  Reduces cloud messaging costs by 95%+.
+ComponentPublisher: AISMC
+ComponentType: aws.greengrass.generic
+
+ComponentConfiguration:
+  DefaultConfiguration:
+    site_id: "site-001"
+    sync_interval: 3600  # 1 hour in seconds
+    topic_prefix: "aismc"
+    top_affected_count: 10
+    enabled: "true"
+    log_level: "INFO"
+
+ComponentDependencies:
+  aws.greengrass.Nucleus:
+    VersionRequirement: ">=2.0.0"
+    DependencyType: HARD
+
+Manifests:
+  - Platform:
+      os: linux
+    Lifecycle:
+      Install:
+        RequiresPrivilege: true
+        Script: |
+          echo "Installing IncidentAnalyticsSync dependencies..."
+          pip3 install awsiotsdk==1.11.9
+          echo "✅ Dependencies installed"
+
+      Run:
+        RequiresPrivilege: false
+        Script: |
+          #!/bin/bash
+          set -e
+
+          echo "IncidentAnalyticsSync - v2.0 Batch Analytics Component"
+          echo "Site ID: {configuration:/site_id}"
+          echo "Sync Interval: {configuration:/sync_interval}s (hourly)"
+          echo "Enabled: {configuration:/enabled}"
+
+          if [ "{configuration:/enabled}" = "true" ]; then
+            echo "Starting hourly incident analytics sync..."
+
+            python3 -u {artifacts:path}/analytics_sync.py \
+              --site-id "{configuration:/site_id}" \
+              --interval {configuration:/sync_interval} \
+              --topic-prefix "{configuration:/topic_prefix}" \
+              --top-count {configuration:/top_affected_count}
+
+          else
+            echo "Component disabled via configuration"
+            # Keep component running but idle
+            while true; do
+              sleep 3600
+            done
+          fi
+
+        SetEnv:
+          AWS_IOT_THING_NAME: "GreengrassCore-{configuration:/site_id}-hanoi"
+          AWS_REGION: "ap-southeast-1"
+
+      Shutdown:
+        Script: |
+          echo "IncidentAnalyticsSync - Shutdown"
+        Timeout: 5

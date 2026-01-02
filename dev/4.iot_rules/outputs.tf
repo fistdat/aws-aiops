@@ -4,6 +4,8 @@ output "iot_rules" {
   value = {
     incidents_to_dynamodb  = aws_iot_topic_rule.incidents_to_dynamodb.arn
     registry_to_dynamodb   = aws_iot_topic_rule.registry_to_dynamodb.arn
+    inventory_to_dynamodb  = aws_iot_topic_rule.inventory_to_dynamodb.arn  # v2.0
+    analytics_to_dynamodb  = aws_iot_topic_rule.analytics_to_dynamodb.arn  # v2.0
     critical_alerts_to_sns = aws_iot_topic_rule.critical_alerts_to_sns.arn
     # metrics_to_timestream disabled - Timestream not supported in ap-southeast-1
   }

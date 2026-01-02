@@ -1,0 +1,40 @@
+{
+  "targetArn": "arn:aws:iot:ap-southeast-1:061100493617:thing/GreengrassCore-site001-hanoi",
+  "deploymentName": "aismc-edge-components-v1.0.0",
+  "components": {
+    "aws.greengrass.Nucleus": {
+      "componentVersion": "2.16.0",
+      "configurationUpdate": {
+        "merge": "{\"awsRegion\":\"ap-southeast-1\",\"componentStoreMaxSizeBytes\":\"10000000000\",\"deploymentPollingFrequencySeconds\":15,\"fleetStatus\":{\"periodicStatusPublishIntervalSeconds\":86400},\"iotCredEndpoint\":\"cuw83h10f08ux.credentials.iot.ap-southeast-1.amazonaws.com\",\"iotDataEndpoint\":\"a3th3uw82ywkax-ats.iot.ap-southeast-1.amazonaws.com\",\"iotRoleAlias\":\"GreengrassCoreTokenExchangeRoleAlias\"}"
+      }
+    },
+    "com.aismc.ZabbixEventSubscriber": {
+      "componentVersion": "1.0.0",
+      "configurationUpdate": {
+        "merge": "{\"webhook_port\":8081,\"site_id\":\"site-001\",\"log_level\":\"INFO\"}"
+      }
+    },
+    "com.aismc.IncidentMessageForwarder": {
+      "componentVersion": "1.0.0",
+      "configurationUpdate": {
+        "merge": "{\"site_id\":\"site-001\",\"poll_interval\":10,\"batch_size\":10,\"max_retries\":5,\"log_level\":\"INFO\"}"
+      }
+    },
+    "com.aismc.ZabbixHostRegistrySync": {
+      "componentVersion": "1.0.0",
+      "configurationUpdate": {
+        "merge": "{\"zabbix_api_url\":\"http://localhost:8080/api_jsonrpc.php\",\"zabbix_username\":\"Admin\",\"zabbix_password\":\"zabbix\",\"sync_schedule\":\"0 2 * * *\",\"sync_enabled\":\"true\",\"incremental_sync\":\"true\",\"log_level\":\"INFO\"}"
+      }
+    }
+  },
+  "deploymentPolicies": {
+    "componentUpdatePolicy": {
+      "action": "NOTIFY_COMPONENTS",
+      "timeoutInSeconds": 300
+    },
+    "configurationValidationPolicy": {
+      "timeoutInSeconds": 300
+    },
+    "failureHandlingPolicy": "ROLLBACK"
+  }
+}

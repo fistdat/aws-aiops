@@ -98,6 +98,68 @@ resource "aws_iot_topic_rule" "registry_to_dynamodb" {
   tags = local.tags
 }
 
+# ============================================================================
+# v2.0 Architecture Rules - Batch Analytics
+# ============================================================================
+
+# Rule: Route Device Inventory Summaries to DynamoDB
+resource "aws_iot_topic_rule" "inventory_to_dynamodb" {
+  name        = "${local.product_name}_${local.environment}_inventory_to_dynamodb"
+  description = "Route daily device inventory summaries to DynamoDB DeviceInventory table (v2.0)"
+  enabled     = true
+  sql         = "SELECT * FROM 'aismc/+/inventory'"
+  sql_version = "2016-03-23"
+
+  dynamodbv2 {
+    role_arn = data.terraform_remote_state.iam.outputs.iot_core_service_role_arn
+
+    put_item {
+      table_name = data.terraform_remote_state.data_layer.outputs.device_inventory_table_name
+    }
+  }
+
+  error_action {
+    cloudwatch_logs {
+      log_group_name = aws_cloudwatch_log_group.iot_rules_errors.name
+      role_arn       = data.terraform_remote_state.iam.outputs.iot_core_service_role_arn
+    }
+  }
+
+  tags = merge(local.tags, {
+    Architecture = "v2.0"
+    DataType     = "Daily Inventory Summary"
+  })
+}
+
+# Rule: Route Incident Analytics to DynamoDB
+resource "aws_iot_topic_rule" "analytics_to_dynamodb" {
+  name        = "${local.product_name}_${local.environment}_analytics_to_dynamodb"
+  description = "Route hourly incident analytics to DynamoDB IncidentAnalytics table (v2.0)"
+  enabled     = true
+  sql         = "SELECT * FROM 'aismc/+/analytics'"
+  sql_version = "2016-03-23"
+
+  dynamodbv2 {
+    role_arn = data.terraform_remote_state.iam.outputs.iot_core_service_role_arn
+
+    put_item {
+      table_name = data.terraform_remote_state.data_layer.outputs.incident_analytics_table_name
+    }
+  }
+
+  error_action {
+    cloudwatch_logs {
+      log_group_name = aws_cloudwatch_log_group.iot_rules_errors.name
+      role_arn       = data.terraform_remote_state.iam.outputs.iot_core_service_role_arn
+    }
+  }
+
+  tags = merge(local.tags, {
+    Architecture = "v2.0"
+    DataType     = "Hourly Analytics Summary"
+  })
+}
+
 # Rule: Critical Alerts to SNS
 resource "aws_iot_topic_rule" "critical_alerts_to_sns" {
   name        = "${local.product_name}_${local.environment}_critical_alerts"

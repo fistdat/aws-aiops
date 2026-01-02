@@ -1,0 +1,83 @@
+---
+RecipeFormatVersion: '2020-01-25'
+ComponentName: com.aismc.ZabbixHostRegistrySync
+ComponentVersion: '1.0.0'
+ComponentDescription: |
+  Scheduled sync of ALL Zabbix hosts and host groups to local SQLite.
+  Supports incremental sync using lastchange timestamps.
+  Runs daily at 2:00 AM by default (configurable).
+ComponentPublisher: AISMC
+ComponentType: aws.greengrass.generic
+
+ComponentConfiguration:
+  DefaultConfiguration:
+    zabbix_api_url: "http://localhost:8080/api_jsonrpc.php"
+    zabbix_username: "Admin"
+    zabbix_password: "zabbix"
+    sync_schedule: "0 2 * * *"
+    sync_enabled: "true"
+    incremental_sync: "true"
+    site_id: "site-001"
+    topic_prefix: "aismc"
+    cloud_publish: "true"  # v2.0: Publish inventory summary to cloud
+    log_level: "INFO"
+
+Manifests:
+  - Platform:
+      os: linux
+    Lifecycle:
+      Install:
+        RequiresPrivilege: true
+        Script: |
+          echo "Installing ZabbixHostRegistrySync dependencies..."
+          pip3 install requests==2.31.0
+          echo "✅ Dependencies installed"
+
+      Run:
+        RequiresPrivilege: false
+        Script: |
+          #!/bin/bash
+          set -e
+
+          echo "ZabbixHostRegistrySync - Scheduled Component"
+          echo "Schedule: {configuration:/sync_schedule} (Daily at 2AM = every 86400s)"
+          echo "Incremental: {configuration:/incremental_sync}"
+
+          if [ "{configuration:/sync_enabled}" = "true" ]; then
+            echo "Starting continuous sync service..."
+
+            INCREMENTAL_FLAG=""
+            if [ "{configuration:/incremental_sync}" = "false" ]; then
+              INCREMENTAL_FLAG="--full"
+            fi
+
+            # Run continuously with 24-hour interval (86400 seconds)
+            # This keeps the component running and performs sync daily
+            # v2.0: Added cloud publishing for inventory summary
+            CLOUD_PUBLISH_FLAG=""
+            if [ "{configuration:/cloud_publish}" = "false" ]; then
+              CLOUD_PUBLISH_FLAG="--no-cloud-publish"
+            fi
+
+            python3 -u {artifacts:path}/sync_service.py \
+              --api-url "{configuration:/zabbix_api_url}" \
+              --username "{configuration:/zabbix_username}" \
+              --password "{configuration:/zabbix_password}" \
+              --site-id "{configuration:/site_id}" \
+              --topic-prefix "{configuration:/topic_prefix}" \
+              --schedule 86400 \
+              $INCREMENTAL_FLAG \
+              $CLOUD_PUBLISH_FLAG
+
+          else
+            echo "Sync disabled via configuration"
+            # Keep component running but idle
+            while true; do
+              sleep 3600
+            done
+          fi
+
+      Shutdown:
+        Script: |
+          echo "ZabbixHostRegistrySync - Shutdown"
+        Timeout: 5

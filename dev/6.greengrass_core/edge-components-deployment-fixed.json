@@ -1,0 +1,40 @@
+{
+  "targetArn": "arn:aws:iot:ap-southeast-1:061100493617:thing/GreengrassCore-site001-hanoi",
+  "deploymentName": "aismc-edge-v2-analytics-fix-$(date +%Y%m%d%H%M%S)",
+  "components": {
+    "com.aismc.ZabbixEventSubscriber": {
+      "componentVersion": "1.0.0",
+      "configurationUpdate": {
+        "merge": "{\"webhook_port\":8081,\"site_id\":\"site-001\",\"log_level\":\"INFO\"}"
+      }
+    },
+    "com.aismc.IncidentMessageForwarder": {
+      "componentVersion": "1.0.0",
+      "configurationUpdate": {
+        "merge": "{\"enabled\":\"false\",\"site_id\":\"site-001\",\"poll_interval\":10,\"batch_size\":10,\"max_retries\":5,\"log_level\":\"INFO\"}"
+      }
+    },
+    "com.aismc.ZabbixHostRegistrySync": {
+      "componentVersion": "1.0.0",
+      "configurationUpdate": {
+        "merge": "{\"zabbix_api_url\":\"http://localhost:8080/api_jsonrpc.php\",\"zabbix_username\":\"Admin\",\"zabbix_password\":\"zabbix\",\"sync_schedule\":\"0 2 * * *\",\"sync_enabled\":\"true\",\"incremental_sync\":\"true\",\"site_id\":\"site-001\",\"topic_prefix\":\"aismc\",\"cloud_publish\":\"true\",\"log_level\":\"INFO\"}"
+      }
+    },
+    "com.aismc.IncidentAnalyticsSync": {
+      "componentVersion": "1.0.0",
+      "configurationUpdate": {
+        "merge": "{\"site_id\":\"site-001\",\"sync_interval\":3600,\"topic_prefix\":\"aismc\",\"top_affected_count\":10,\"enabled\":\"true\",\"log_level\":\"INFO\"}"
+      }  
+    }
+  },
+  "deploymentPolicies": {
+    "componentUpdatePolicy": {
+      "action": "SKIP_NOTIFY_COMPONENTS",
+      "timeoutInSeconds": 60
+    },
+    "configurationValidationPolicy": {
+      "timeoutInSeconds": 60
+    },
+    "failureHandlingPolicy": "DO_NOTHING"
+  }
+}

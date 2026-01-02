@@ -10,17 +10,33 @@
 
 ## Architecture Overview
 
+### Data Flow
+```
+Camera Offline → Zabbix Monitoring → Greengrass Core → AWS IoT Core → DynamoDB → Grafana/SNS
+```
+
+### Architecture Diagram
+
 ```mermaid
 graph TB
-    subgraph "IoT Devices Layer"
-        Camera1[Camera Devices]
-        Camera2[IoT Sensors]
+    subgraph "Edge Layer - Localhost"
+        Cameras[IP Cameras<br/>192.168.x.x]
+        Zabbix[Zabbix Monitoring<br/>localhost:10051]
+
+        subgraph "Greengrass Core - GreengrassCore-site001-hanoi"
+            GGNucleus[Greengrass Nucleus v2.16.0]
+            GGComponent1[Zabbix Event Subscriber]
+            GGComponent2[Incident Message Forwarder]
+            GGShadow[Shadow Manager]
+            LocalDB[(SQLite Database<br/>Incidents & Queue)]
+        end
     end
 
     subgraph "AWS Cloud - ap-southeast-1"
         subgraph "IoT Core Services"
             ThingGroups[Thing Groups<br/>Vietnam → Hanoi-Site-001]
-            IoTPolicy[IoT Policies<br/>greengrass-core-policy]
+            Thing[Thing: GreengrassCore-site001-hanoi]
+            IoTPolicy[IoT Policy<br/>greengrass-core-policy]
             IoTRules[IoT Rules Engine<br/>3 Active Rules]
         end
 
@@ -58,7 +74,6 @@ graph TB
             IAM1[IoT Core Service Role]
             IAM2[Lambda Execution Roles]
             IAM3[API Gateway Role]
-            IAM4[CloudWatch Logging Role]
         end
 
         subgraph "State Management"
@@ -67,14 +82,19 @@ graph TB
         end
     end
 
-    subgraph "External Consumers"
-        WebApp[Web Application]
-        MobileApp[Mobile App]
-        Dashboard[Monitoring Dashboard]
+    subgraph "Visualization Layer"
+        Grafana[Grafana Dashboard<br/>Localhost/Cloud]
     end
 
-    Camera1 -->|MQTT/TLS| ThingGroups
-    Camera2 -->|MQTT/TLS| ThingGroups
+    %% Edge Layer Flow
+    Cameras -->|ICMP Ping<br/>SNMP| Zabbix
+    Zabbix -->|Webhook/API<br/>Camera Offline Event| GGComponent1
+    GGComponent1 -->|Store| LocalDB
+    GGComponent1 -->|Transform to<br/>NGSI-LD| GGComponent2
+    GGComponent2 -->|MQTT/TLS<br/>cameras/site-001/incidents| Thing
+
+    %% Cloud Flow
+    Thing --> ThingGroups
     ThingGroups -->|Topic: cameras/+/incidents| Rule1
     ThingGroups -->|Topic: cameras/+/registry| Rule2
     ThingGroups -->|Topic: cameras/+/incidents<br/>Filter: priority=critical| Rule3
@@ -83,9 +103,7 @@ graph TB
     Rule2 -->|Write| DDB1
     Rule3 -->|Publish| SNS1
 
-    SNS1 -->|Notify| Email
-    SNS2 -.->|Future| Email
-    SNS3 -.->|Future| Email
+    SNS1 -->|Email Alert| Email
 
     IoTRules -->|Errors| CW1
 
@@ -97,30 +115,33 @@ graph TB
     Lambda2 -->|Logs| CW2
     APIGW -->|Logs| CW3
 
-    WebApp -->|HTTPS| APIGW
-    MobileApp -->|HTTPS| APIGW
-    Dashboard -->|HTTPS| APIGW
+    %% Grafana Integration
+    Grafana -->|Query API| APIGW
+    Grafana -->|Direct Query| DDB1
+    Grafana -->|Direct Query| DDB2
 
     IAM1 -.->|Authorize| IoTRules
     IAM2 -.->|Authorize| Lambda1
     IAM2 -.->|Authorize| Lambda2
     IAM3 -.->|Authorize| APIGW
-    IAM4 -.->|Authorize| CW3
 
+    %% Styling
+    style Zabbix fill:#DC382D
+    style GGNucleus fill:#7AA116
+    style GGComponent1 fill:#7AA116
+    style GGComponent2 fill:#7AA116
+    style LocalDB fill:#FFD700
+    style Thing fill:#FF9900
     style ThingGroups fill:#FF9900
     style IoTRules fill:#FF9900
     style DDB1 fill:#3B48CC
     style DDB2 fill:#3B48CC
     style SNS1 fill:#FF4F8B
-    style SNS2 fill:#FF4F8B
-    style SNS3 fill:#FF4F8B
     style APIGW fill:#FF4F8B
     style Lambda1 fill:#FF9900
     style Lambda2 fill:#FF9900
+    style Grafana fill:#F46800
     style S3 fill:#569A31
-    style CW1 fill:#FF4F8B
-    style CW2 fill:#FF4F8B
-    style CW3 fill:#FF4F8B
 ```
 
 ---
@@ -139,10 +160,13 @@ graph TB
 |-----------|--------|-----------|---------|
 | S3 Backend | ✅ Deployed | 4 | State management with DynamoDB locking |
 | IAM Roles | ✅ Deployed | 17 | Service roles for IoT, Lambda, API Gateway |
-| IoT Core | ✅ Deployed | 12 | Thing Groups, Policies |
+| IoT Core | ✅ Deployed | 12 | Thing Groups, Policies, Things |
+| **Greengrass Core** | ✅ **Connected** | 1 Thing | **GreengrassCore-site001-hanoi** (v2.16.0) |
 | Data Layer | ✅ Deployed | 2 | DynamoDB tables (no VPC required) |
 | IoT Rules | ✅ Deployed | 8 | 3 Rules, 3 SNS Topics, 1 Subscription |
 | API Gateway | ✅ Deployed | 25 | REST API with 2 Lambda functions |
+| **Edge Monitoring** | ⏭️ **To Deploy** | - | **Zabbix Integration + Custom Components** |
+| **Visualization** | ⏭️ **To Deploy** | - | **Grafana Dashboard** |
 | Networking | ⏸️ Not Deployed | 0 | VPC not required for serverless architecture |
 | Timestream | ⚠️ Skipped | 0 | Not supported in ap-southeast-1 |
 
@@ -205,7 +229,128 @@ Vietnam (Root)
 - `cameras/+/registry` - Device registration updates
 - `cameras/+/metrics` - Device metrics (future use)
 
-### 4. Data Storage Layer
+**IoT Things**
+- **GreengrassCore-site001-hanoi**
+  - ARN: `arn:aws:iot:ap-southeast-1:061100493617:thing/GreengrassCore-site001-hanoi`
+  - Thing Type: GreengrassCoreDevice
+  - Thing Group: Hanoi-Site-001
+  - Certificate: Attached and Active
+  - Status: ✅ Connected to AWS IoT Core
+  - Region: ap-southeast-1
+
+### 4. Edge Layer (Greengrass + Zabbix)
+
+**AWS IoT Greengrass Core v2**
+- **Thing Name**: GreengrassCore-site001-hanoi
+- **Nucleus Version**: v2.16.0 (Latest)
+- **Installation Path**: /greengrass/v2
+- **Status**: ✅ RUNNING
+- **Connection**: Successfully connected to AWS IoT Core ap-southeast-1
+- **Endpoint**: `a3th3uw82ywkax-ats.iot.ap-southeast-1.amazonaws.com`
+
+**Deployed Greengrass Components**
+1. ✅ aws.greengrass.Nucleus v2.16.0 (FINISHED)
+2. ✅ aws.greengrass.Cli v2.16.0 (RUNNING)
+3. ✅ aws.greengrass.ShadowManager (RUNNING)
+4. ✅ UpdateSystemPolicyService (RUNNING)
+5. ✅ TelemetryAgent (RUNNING)
+6. ✅ DeploymentService (RUNNING)
+7. ✅ FleetStatusService (RUNNING)
+
+**Custom Components (To Be Deployed)**
+- ⏭️ **com.aismc.ZabbixEventSubscriber** v1.0.0
+  - Purpose: Subscribe to Zabbix webhook events
+  - Input: Zabbix problem/recovery notifications (real-time)
+  - Output: Local SQLite storage + MQTT publish
+  - Status: Ready to deploy
+
+- ⏭️ **com.aismc.IncidentMessageForwarder** v1.0.0
+  - Purpose: Transform and forward incidents to AWS IoT Core
+  - Input: Local SQLite incidents queue
+  - Output: MQTT messages to topic `cameras/site-001/incidents`
+  - Format: NGSI-LD compliant
+
+- ⏭️ **com.aismc.ZabbixHostRegistrySync** v1.0.0
+  - Purpose: Sync ALL hosts metadata from Zabbix (incremental sync)
+  - Scope: All host groups and all hosts (cameras, servers, network devices, etc.)
+  - Input: Zabbix API (hostgroup.get + host.get with timestamps)
+  - Schedule: Configurable via configuration table (default: daily at 2:00 AM)
+  - Sync Strategy:
+    - **Incremental Sync**: Only fetch hosts modified since last sync
+    - **Change Detection**: Compare with last_sync timestamp in configuration
+    - **Delta Processing**: New hosts, updated hosts, deleted hosts
+  - Output:
+    - Local SQLite storage (devices table - generalized from cameras)
+    - Device Shadow update with metadata
+    - Sync statistics (total, new, updated, deleted)
+  - Configuration:
+    - sync_schedule: Cron expression (default: "0 2 * * *")
+    - sync_enabled: Boolean (true/false)
+    - last_sync_timestamp: ISO8601 timestamp
+    - incremental_sync: Boolean (true for delta, false for full sync)
+
+**Local Data Storage**
+- **SQLite Database**: /var/greengrass/database/greengrass.db
+- **Tables**:
+  - cameras (camera-specific registry - subset of devices)
+  - devices (ALL host registry from Zabbix - generalized table)
+  - host_groups (Zabbix host groups metadata)
+  - incidents (offline/online events)
+  - message_queue (outbound messages)
+  - sync_log (synchronization history with checksums)
+  - configuration (component settings including sync schedule)
+
+**Zabbix Monitoring Server**
+- **Host**: localhost
+- **Version**: To be confirmed
+- **API Endpoint**: http://localhost/zabbix/api_jsonrpc.php
+- **Monitoring Method**: ICMP Ping + SNMP (for IP cameras)
+- **Trigger**: Camera offline detection
+- **Integration**: Webhook → Greengrass Component
+
+**Data Flow Summary**
+```
+1. Real-time Incident Flow (Webhook-based):
+   Device Offline → Zabbix Detection → Webhook → ZabbixEventSubscriber
+                                                            ↓
+                                                  Store SQLite + MQTT
+                                                            ↓
+                                              IncidentMessageForwarder
+                                                            ↓
+                                        AWS IoT Core → DynamoDB → SNS Alert
+
+2. Scheduled Metadata Sync Flow (API-based, Incremental):
+   Zabbix API (host groups + hosts) → ZabbixHostRegistrySync
+                                                ↓
+                                    Compare with last_sync timestamp
+                                                ↓
+                                    Fetch only changed/new hosts
+                                                ↓
+                            Store SQLite (devices + host_groups tables)
+                                                ↓
+                                    Update Device Shadow → DynamoDB
+                                                ↓
+                            Log sync statistics (total, new, updated, deleted)
+
+3. Configuration Management:
+   Configuration table stores:
+   - last_sync_timestamp: Track incremental sync
+   - sync_schedule: Cron expression for sync frequency
+   - sync_enabled: Enable/disable scheduled sync
+   - total_devices: Current total device count
+
+4. Change Detection Logic:
+   - Query: host.get with filter lastchange >= last_sync_timestamp
+   - Compare checksum (MD5 of host metadata)
+   - If no changes detected → Skip sync, log "no changes"
+   - If changes detected → Process delta only
+
+5. Alerting & Visualization:
+   DynamoDB → API Gateway → Lambda → Grafana Dashboard
+   Critical incidents → SNS → Email alerts
+```
+
+### 5. Data Storage Layer
 
 **DynamoDB Tables** (Serverless, no VPC required)
 
@@ -480,39 +625,176 @@ All IAM roles follow least privilege principle:
 
 ## Next Steps
 
-### Immediate Actions
-1. ✅ All core infrastructure deployed
-2. ✅ Validation completed
-3. ⏭️ Configure IoT device certificates
-4. ⏭️ Test MQTT message flow
-5. ⏭️ Test API endpoints with sample data
+### ✅ Phase 1: AWS Cloud Infrastructure (COMPLETED)
+1. ✅ S3 Backend & Terraform State Management
+2. ✅ IAM Roles & Policies
+3. ✅ AWS IoT Core (Thing Groups, Policies, Things)
+4. ✅ DynamoDB Tables (device-registry, camera-incidents)
+5. ✅ IoT Rules Engine (3 rules active)
+6. ✅ SNS Topics & Email Subscriptions
+7. ✅ API Gateway + Lambda Functions
+8. ✅ CloudWatch Logging & Monitoring
+9. ✅ Greengrass Core Installation & Connection
+10. ✅ Infrastructure Validation (9/10 components)
 
-### Future Enhancements
-- [ ] Implement API Gateway authentication
-- [ ] Deploy Greengrass Core on edge devices
-- [ ] Add CloudWatch dashboards for monitoring
-- [ ] Implement CI/CD pipeline for infrastructure
-- [ ] Add DynamoDB backup automation
-- [ ] Configure SNS email subscriptions for warning/operational topics
-- [ ] Deploy VPC networking if private resources needed
-- [ ] Migrate to different region for Timestream support (if needed)
+### ⏭️ Phase 2: Edge Layer Integration (NEXT - IN PROGRESS)
 
-### Testing Plan
-1. **IoT Message Flow Testing**
-   - Use `scripts/1. AWS Infrastructure Setup/test-iot-message.sh`
-   - Verify messages route correctly to DynamoDB
-   - Verify critical alerts trigger SNS notifications
+**Priority 1: Database & Schema Setup**
+1. ⏭️ Create SQLite database schema
+   - Location: `/var/greengrass/database/greengrass.db`
+   - Tables: cameras, incidents, message_queue, sync_log, configuration
+   - Indexes: Optimized for query performance
+   - WAL mode: Enabled for concurrent access
 
-2. **API Testing**
-   - Test GET /cameras endpoint
-   - Test GET /incidents endpoint
-   - Verify CORS functionality
-   - Load testing with sample data
+2. ⏭️ Implement Database DAO Layer (Python)
+   - DatabaseManager: Connection pooling
+   - CameraDAO: CRUD operations for camera registry
+   - IncidentDAO: Incident management with sync status
+   - MessageQueueDAO: Retry queue management
+   - SyncLogDAO: Audit trail for synchronization
 
-3. **Integration Testing**
-   - End-to-end device → IoT Core → Rules → DynamoDB → API flow
-   - Error handling and logging verification
-   - Monitoring and alerting validation
+**Priority 2: Zabbix Integration**
+3. ⏭️ Configure Zabbix Server
+   - Verify Zabbix installation on localhost
+   - Configure host groups for IP cameras
+   - Setup ICMP ping monitoring
+   - Create triggers for camera offline detection
+   - Configure webhook media type for Greengrass
+
+4. ⏭️ Test Zabbix → Greengrass Communication
+   - Webhook endpoint: http://localhost:8080/zabbix/events
+   - Webhook payload format: JSON with problem/recovery data
+   - Authentication: API token or basic auth
+   - Test offline/online event generation
+
+**Priority 3: Custom Greengrass Components Development**
+5. ⏭️ Develop com.aismc.ZabbixEventSubscriber v1.0.0
+   - HTTP server to receive Zabbix webhooks
+   - Parse Zabbix problem/recovery events
+   - Extract camera_id, incident_type, timestamp
+   - Store in SQLite incidents table
+   - Publish to local MQTT topic for forwarding
+
+6. ⏭️ Develop com.aismc.IncidentMessageForwarder v1.0.0
+   - Subscribe to local incidents topic
+   - Transform to NGSI-LD format
+   - Dual storage: SQLite + Stream Manager
+   - Publish to AWS IoT Core topic `cameras/site-001/incidents`
+   - Retry logic for offline scenarios
+
+7. ⏭️ Develop com.aismc.CameraRegistrySync v1.0.0
+   - Fetch camera list from Zabbix API
+   - Transform to NGSI-LD format
+   - Store in SQLite cameras table
+   - Update Device Shadow
+   - Schedule: Daily at 2:00 AM (cron)
+
+**Priority 4: Component Deployment**
+8. ⏭️ Package and Upload Components
+   - Create component recipes (recipe.yaml)
+   - Upload artifacts to S3 bucket
+   - Create component versions via AWS CLI
+
+9. ⏭️ Deploy Components to Greengrass Core
+   - Create deployment configuration
+   - Deploy to Thing: GreengrassCore-site001-hanoi
+   - Verify component status (RUNNING)
+   - Monitor logs for errors
+
+**Priority 5: Testing & Validation**
+10. ⏭️ End-to-End Testing
+    - Simulate camera offline event in Zabbix
+    - Verify Greengrass component receives event
+    - Verify SQLite storage
+    - Verify MQTT publish to AWS IoT Core
+    - Verify DynamoDB record creation
+    - Verify SNS email alert (for critical)
+
+11. ⏭️ Offline Operation Testing
+    - Disconnect from internet
+    - Generate 100+ offline events
+    - Verify local SQLite queue
+    - Restore connectivity
+    - Verify auto-sync to cloud
+
+### ⏭️ Phase 3: Visualization & Dashboard (FUTURE)
+
+12. ⏭️ Grafana Dashboard Setup
+    - Install Grafana (localhost or cloud)
+    - Configure AWS DynamoDB data source
+    - Configure API Gateway data source
+    - Create dashboards:
+      - Real-time camera status
+      - Incident timeline
+      - Site-level statistics
+      - Alert history
+
+13. ⏭️ Dashboard Panels
+    - Camera Status Map (online/offline by location)
+    - Incident Count by Type (pie chart)
+    - Timeline of Incidents (time series)
+    - Top 10 Problematic Cameras (table)
+    - Mean Time to Recovery (MTTR) metric
+
+### ⏭️ Phase 4: Production Hardening (FUTURE)
+
+14. ⏭️ Security Enhancements
+    - Enable API Gateway authentication (Cognito or API Keys)
+    - Configure AWS WAF for API protection
+    - Implement certificate rotation for Greengrass
+    - Enable CloudTrail audit logging
+
+15. ⏭️ Monitoring & Alerting
+    - CloudWatch dashboards for Greengrass components
+    - Alarms for component failures
+    - Alarms for high incident rates
+    - X-Ray tracing for debugging
+
+16. ⏭️ Backup & Disaster Recovery
+    - DynamoDB point-in-time recovery (already enabled)
+    - SQLite database backup automation
+    - Greengrass configuration backup
+    - Recovery runbooks
+
+### Testing Plan (Phase 2)
+
+**1. Unit Testing**
+- [ ] Database DAO layer tests
+- [ ] NGSI-LD transformer tests
+- [ ] Zabbix webhook parser tests
+
+**2. Integration Testing**
+- [ ] Zabbix → Greengrass webhook flow
+- [ ] Greengrass → AWS IoT Core MQTT flow
+- [ ] IoT Rules → DynamoDB → SNS flow
+- [ ] API Gateway → Lambda → DynamoDB query
+
+**3. End-to-End Testing**
+```bash
+# Test Scenario: Camera Offline Detection
+1. Disconnect camera from network
+2. Wait for Zabbix trigger (typically 30s-60s)
+3. Zabbix sends webhook to Greengrass
+4. Greengrass processes event and forwards to AWS
+5. AWS IoT Core routes to DynamoDB
+6. Critical incident triggers SNS email
+7. Grafana displays incident in real-time
+8. Reconnect camera
+9. Zabbix sends recovery webhook
+10. System updates incident status to resolved
+```
+
+**4. Performance Testing**
+- [ ] Load test with 1000 cameras
+- [ ] Simulate 100 concurrent offline events
+- [ ] Measure end-to-end latency (Zabbix → Email)
+- [ ] Verify no message loss during high load
+
+**5. Resilience Testing**
+- [ ] Offline operation (24 hours without internet)
+- [ ] Component restart recovery
+- [ ] Database corruption recovery
+- [ ] AWS service outage handling
 
 ---
 

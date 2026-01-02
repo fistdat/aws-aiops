@@ -1,0 +1,41 @@
+---
+RecipeFormatVersion: '2020-01-25'
+ComponentName: com.aismc.ZabbixEventSubscriber
+ComponentVersion: '1.0.0'
+ComponentDescription: |
+  HTTP webhook server to receive Zabbix problem/recovery events.
+  Stores incidents in local SQLite database for offline resilience.
+ComponentPublisher: AISMC
+ComponentType: aws.greengrass.generic
+
+ComponentConfiguration:
+  DefaultConfiguration:
+    webhook_host: "0.0.0.0"
+    webhook_port: 8081
+    site_id: "site-001"
+    log_level: "INFO"
+
+Manifests:
+  - Platform:
+      os: linux
+    Lifecycle:
+      Install:
+        RequiresPrivilege: true
+        Script: |
+          echo "Installing ZabbixEventSubscriber dependencies..."
+          pip3 install flask==3.0.0 werkzeug==3.0.1
+          echo "✅ Dependencies installed"
+
+      Run:
+        RequiresPrivilege: false
+        Script: |
+          echo "Starting ZabbixEventSubscriber webhook server..."
+          python3 -u /greengrass/v2/components/artifacts/com.aismc.ZabbixEventSubscriber/1.0.0/webhook_server.py \
+            --host {configuration:/webhook_host} \
+            --port {configuration:/webhook_port}
+
+      Shutdown:
+        Script: |
+          echo "Stopping ZabbixEventSubscriber..."
+          pkill -f "webhook_server.py"
+        Timeout: 10
