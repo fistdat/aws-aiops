@@ -45,7 +45,7 @@ locals {
 # ============================================================================
 
 module "greengrass_core_hanoi_site_001" {
-  source = "../../_module/aws/iot/greengrass_thing"
+  source = "../../../_module/aws/iot/greengrass_thing"
 
   thing_name       = "GreengrassCore-site001-hanoi"
   policy_name      = local.greengrass_policy_name
@@ -76,7 +76,7 @@ module "greengrass_core_hanoi_site_001" {
 
 # Create setup instructions file
 resource "local_file" "setup_instructions" {
-  content = templatefile("${path.module}/templates/setup-instructions.tpl", {
+  content = templatefile("${path.module}/../templates/setup-instructions.tpl", {
     thing_name        = module.greengrass_core_hanoi_site_001.thing_name
     iot_endpoint      = module.greengrass_core_hanoi_site_001.iot_endpoint
     credentials_path  = module.greengrass_core_hanoi_site_001.credentials_path
@@ -93,7 +93,7 @@ resource "local_file" "setup_instructions" {
 
 # Create script to copy credentials to Greengrass directory
 resource "local_file" "copy_credentials_script" {
-  content = templatefile("${path.module}/templates/copy-credentials.sh.tpl", {
+  content = templatefile("${path.module}/../templates/copy-credentials.sh.tpl", {
     thing_name       = module.greengrass_core_hanoi_site_001.thing_name
     credentials_path = module.greengrass_core_hanoi_site_001.credentials_path
   })

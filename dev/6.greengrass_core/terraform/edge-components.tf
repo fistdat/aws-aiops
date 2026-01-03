@@ -9,7 +9,7 @@
 # ============================================================================
 
 locals {
-  edge_components_path = "${path.module}/edge-components"
+  edge_components_path = "${path.module}/../edge-components"
   database_schema_file = "${local.edge_components_path}/database/schema.sql"
   python_dao_path      = "${local.edge_components_path}/python-dao"
   scripts_path         = "${local.edge_components_path}/scripts"
@@ -176,7 +176,7 @@ resource "null_resource" "verify_installation" {
 # ============================================================================
 
 resource "local_file" "deployment_summary" {
-  content = templatefile("${path.module}/templates/edge-components-summary.tpl", {
+  content = templatefile("${path.module}/../templates/edge-components-summary.tpl", {
     deployment_timestamp = timestamp()
     database_path        = local.greengrass_db_file
     dao_path             = local.greengrass_dao_path

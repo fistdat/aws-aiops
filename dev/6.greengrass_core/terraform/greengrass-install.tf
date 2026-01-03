@@ -6,7 +6,7 @@
 
 # Create installation script
 resource "local_file" "greengrass_install_script" {
-  content = templatefile("${path.module}/templates/install-greengrass.sh.tpl", {
+  content = templatefile("${path.module}/../templates/install-greengrass.sh.tpl", {
     thing_name       = module.greengrass_core_hanoi_site_001.thing_name
     thing_group      = local.hanoi_site_thing_group
     region           = local.region

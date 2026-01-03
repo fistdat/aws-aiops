@@ -10,9 +10,9 @@ locals {
   dao_base_path        = "/greengrass/v2/components/common"
   dao_database_path    = "${local.dao_base_path}/database"
   dao_utils_path       = "${local.dao_base_path}/utils"
-  edge_database_source = "${path.module}/edge-database/src"
-  test_source          = "${path.module}/edge-database/tests"
-  scripts_source       = "${path.module}/edge-database/scripts"
+  edge_database_source = "${path.module}/../edge-database/src"
+  test_source          = "${path.module}/../edge-database/tests"
+  scripts_source       = "${path.module}/../edge-database/scripts"
 }
 
 # ============================================================================
@@ -149,9 +149,9 @@ resource "null_resource" "deploy_utils_ngsi_ld" {
 # Apply Database Schema Updates
 # ============================================================================
 
-resource "null_resource" "apply_schema_update_v2" {
+resource "null_resource" "apply_schema_update_v3" {
   triggers = {
-    schema_md5 = filemd5("${path.module}/edge-database/schema/schema_update_v2.sql")
+    schema_md5 = filemd5("${path.module}/../edge-database/schema/schema_update_v3.sql")
   }
 
   depends_on = [
@@ -161,9 +161,9 @@ resource "null_resource" "apply_schema_update_v2" {
 
   provisioner "local-exec" {
     command = <<-EOT
-      echo "Applying schema update v2..."
-      sudo sqlite3 /var/greengrass/database/greengrass.db < ${path.module}/edge-database/schema/schema_update_v2.sql
-      echo "✅ Schema update v2 applied successfully"
+      echo "Applying schema update v3..."
+      sudo sqlite3 /var/greengrass/database/greengrass.db < ${path.module}/../edge-database/schema/schema_update_v3.sql
+      echo "✅ Schema update v3 applied successfully"
     EOT
   }
 }
@@ -184,7 +184,7 @@ resource "null_resource" "deploy_verification_script" {
     null_resource.deploy_database_device_dao,
     null_resource.deploy_utils_init,
     null_resource.deploy_utils_ngsi_ld,
-    null_resource.apply_schema_update_v2
+    null_resource.apply_schema_update_v3
   ]
 
   provisioner "local-exec" {
@@ -239,7 +239,7 @@ output "deployed_files" {
       "${local.dao_utils_path}/ngsi_ld.py"
     ]
     schema_updates = [
-      "schema_update_v2.sql (applied)"
+      "schema_update_v3.sql (applied)"
     ]
   }
 }

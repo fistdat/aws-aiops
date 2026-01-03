@@ -13,11 +13,11 @@ resource "null_resource" "database_migration_v3_cameras_to_devices" {
   triggers = {
     migration_version = local.migration_version
     # Re-run if migration script changes
-    script_hash = md5(file("${path.module}/scripts/migrate-cameras-to-devices.sh"))
+    script_hash = md5(file("${path.module}/../scripts/migrate-cameras-to-devices.sh"))
   }
 
   provisioner "local-exec" {
-    command = "bash ${path.module}/scripts/migrate-cameras-to-devices.sh"
+    command = "bash ${path.module}/../scripts/migrate-cameras-to-devices.sh"
   }
 
   # Ensure database exists before migration

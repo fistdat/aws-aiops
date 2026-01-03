@@ -23,7 +23,7 @@ locals {
   dao_deploy_path     = "/greengrass/v2/components/common/database"
 
   # Zabbix webhook script (v4 - message body approach for Zabbix 7.4.x)
-  webhook_script_path = "${path.module}/zabbix-integration/templates/webhook-script-v4-message.js"
+  webhook_script_path = "${path.module}/../zabbix-integration/templates/webhook-script-v4-message.js"
 
   # Zabbix API configuration
   zabbix_api_url  = "http://localhost:8080/api_jsonrpc.php"

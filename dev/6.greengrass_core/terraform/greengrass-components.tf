@@ -7,7 +7,7 @@
 
 locals {
   components_base_path = "/greengrass/v2/components"
-  components_source    = "${path.module}/edge-components"
+  components_source    = "${path.module}/../edge-components"
 
   # Component artifacts will be stored here
   artifacts_path = "${local.components_base_path}/artifacts"
@@ -429,7 +429,7 @@ resource "null_resource" "deploy_forwarder_recipe" {
 # Update DAO layer with new methods
 resource "null_resource" "update_dao_for_forwarder" {
   triggers = {
-    dao_md5 = filemd5("${path.module}/edge-database/src/database/dao.py")
+    dao_md5 = filemd5("${path.module}/../edge-database/src/database/dao.py")
   }
 
   depends_on = [null_resource.deploy_forwarder_recipe]
@@ -468,6 +468,52 @@ resource "null_resource" "deploy_registry_sync_service" {
       sudo chmod 755 \
         ${local.artifacts_path}/com.aismc.ZabbixHostRegistrySync/1.0.0/sync_service.py
       echo "✅ Deployed sync_service.py"
+    EOT
+  }
+}
+
+# ============================================================================
+# Deploy IncidentAnalyticsSync Component
+# ============================================================================
+
+# Deploy analytics sync script to /greengrass/v2/packages/artifacts (required by Greengrass)
+resource "null_resource" "deploy_analytics_sync_service" {
+  triggers = {
+    file_md5 = filemd5("${local.components_source}/incident-analytics-sync/src/analytics_sync.py")
+  }
+
+  depends_on = [null_resource.create_component_directories]
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      sudo mkdir -p /greengrass/v2/packages/artifacts/com.aismc.IncidentAnalyticsSync/1.0.0
+      sudo cp ${local.components_source}/incident-analytics-sync/src/analytics_sync.py \
+        /greengrass/v2/packages/artifacts/com.aismc.IncidentAnalyticsSync/1.0.0/analytics_sync.py
+      sudo chown ggc_user:ggc_group \
+        /greengrass/v2/packages/artifacts/com.aismc.IncidentAnalyticsSync/1.0.0/analytics_sync.py
+      sudo chmod 755 \
+        /greengrass/v2/packages/artifacts/com.aismc.IncidentAnalyticsSync/1.0.0/analytics_sync.py
+      echo "✅ Deployed analytics_sync.py to packages/artifacts"
+    EOT
+  }
+}
+
+# Deploy requirements.txt for analytics sync
+resource "null_resource" "deploy_analytics_sync_requirements" {
+  triggers = {
+    always_run = timestamp()  # requirements.txt doesn't exist in source, use system awsiotsdk
+  }
+
+  depends_on = [null_resource.deploy_analytics_sync_service]
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      echo "awsiotsdk==1.11.9" | sudo tee /greengrass/v2/packages/artifacts/com.aismc.IncidentAnalyticsSync/1.0.0/requirements.txt
+      sudo chown ggc_user:ggc_group \
+        /greengrass/v2/packages/artifacts/com.aismc.IncidentAnalyticsSync/1.0.0/requirements.txt
+      sudo chmod 644 \
+        /greengrass/v2/packages/artifacts/com.aismc.IncidentAnalyticsSync/1.0.0/requirements.txt
+      echo "✅ Created requirements.txt"
     EOT
   }
 }
@@ -605,17 +651,19 @@ resource "null_resource" "configure_greengrass_sudoers" {
 # Create Greengrass deployment to deploy all custom components
 resource "null_resource" "greengrass_components_deployment" {
   triggers = {
-    deployment_config = filemd5("${path.module}/edge-components-deployment.json")
+    deployment_config = filemd5("${path.module}/../deployments/results/edge-components-deployment.json")
     # Re-deploy when any component artifact changes
     webhook_md5    = filemd5("${local.components_source}/zabbix-event-subscriber/src/webhook_server.py")
     forwarder_md5  = filemd5("${local.components_source}/incident-message-forwarder/src/forwarder_service.py")
     sync_md5       = filemd5("${local.components_source}/zabbix-host-registry-sync/src/sync_service.py")
+    analytics_md5  = filemd5("${local.components_source}/incident-analytics-sync/src/analytics_sync.py")
   }
 
   depends_on = [
     null_resource.deploy_webhook_recipe,
     null_resource.deploy_forwarder_recipe,
     null_resource.deploy_registry_sync_recipe,
+    null_resource.deploy_analytics_sync_service,
     null_resource.configure_greengrass_sudoers
   ]
 
@@ -623,44 +671,22 @@ resource "null_resource" "greengrass_components_deployment" {
     command = <<-EOT
       echo "Phase 2: Deploying custom local components via greengrass-cli..."
 
-      # Use greengrass-cli to create local deployment
-      # This allows deploying components from local recipes without AWS Component Store
-      sudo /greengrass/v2/bin/greengrass-cli deployment create \
-        --recipeDir ${local.recipes_path} \
-        --artifactDir ${local.artifacts_path} \
-        --merge "com.aismc.ZabbixEventSubscriber=1.0.0" \
-        --merge "com.aismc.IncidentMessageForwarder=1.0.0" \
-        --merge "com.aismc.ZabbixHostRegistrySync=1.0.0" \
-        > ${path.module}/deployment-result-local.json 2>&1
+      # Restart Greengrass to pick up IncidentAnalyticsSync artifacts
+      echo "Restarting Greengrass service to load new artifacts..."
+      sudo systemctl restart greengrass.service
 
-      echo "✅ Local deployment created"
+      # Wait for Greengrass to restart
+      sleep 30
 
-      # Wait for components to start (max 2 minutes)
-      echo "Waiting for custom components to start..."
-      for i in $(seq 1 24); do
-        echo "Check $i/24..."
+      echo "✅ Greengrass service restarted"
 
-        # Check if all 3 components are running
-        RUNNING_COUNT=$(sudo /greengrass/v2/bin/greengrass-cli component list 2>/dev/null | grep -c "com.aismc" || echo "0")
-
-        if [ "$RUNNING_COUNT" -ge 3 ]; then
-          echo ""
-          echo "======================================"
-          echo "✅ All 3 custom components are RUNNING!"
-          echo "======================================"
-          echo ""
-          sudo /greengrass/v2/bin/greengrass-cli component list | grep "com.aismc"
-          exit 0
-        fi
-
-        sleep 5
-      done
+      # Check component status
+      echo "Checking component status..."
+      sudo /greengrass/v2/bin/greengrass-cli component list | grep "com.aismc" || echo "Components still starting..."
 
       echo ""
-      echo "⏳ Deployment in progress - components may still be starting"
-      echo "Check status with: sudo /greengrass/v2/bin/greengrass-cli component list"
-      echo ""
-      exit 0
+      echo "✅ IncidentAnalyticsSync artifacts deployed"
+      echo "Components will auto-reload from AWS deployment"
     EOT
   }
 
